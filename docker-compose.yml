@@ -1,0 +1,52 @@
+services:
+  search1:
+    build:  .
+    container_name: search1
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.SearchAPI
+    networks:
+      - search_net
+
+  search2:
+    build: .
+    container_name:  search2
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.SearchAPI
+    networks:
+      - search_net
+
+  search3:
+    build: .
+    container_name:  search3
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.SearchAPI
+    networks:
+      - search_net
+
+  nginx:
+    image: nginx:latest
+    container_name: load_balancer
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - search1
+      - search2
+      - search3
+    networks:
+      - search_net
+
+networks:
+  search_net:
+    driver: bridge
