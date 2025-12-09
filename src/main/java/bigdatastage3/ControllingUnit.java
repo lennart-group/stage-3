@@ -23,8 +23,8 @@ public class ControllingUnit {
   public static void main(String[] args) {
     Dotenv dotenv = Dotenv.load();
 
-    String ingestionBase = dotenv.get("INGESTING_API");
-    String indexingBase = dotenv.get("INDEXING_API");
+    String ingestionBase = dotenv.get("INGEST_API");
+    String indexingBase = dotenv.get("INDEX_API");
     String searchBase = dotenv.get("SEARCH_API");
     String processedPath = dotenv.get("INDEXED_FILES");
 

@@ -3,6 +3,7 @@ package bigdatastage3;
 import com.google.gson.Gson;
 import com.mongodb.client.*;
 import com.mongodb.client.model.Filters;
+import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -22,6 +23,9 @@ public class SearchAPI {
 
     public static void main(String[] args) {
 
+        Dotenv dotenv = Dotenv.load();
+        int PORT = Integer.parseInt(dotenv.get("SEARCH_PORT"));
+
         // Initialize MongoDB connection
         try {
             databases = RepositoryConnection.connectToDB();
@@ -35,7 +39,7 @@ public class SearchAPI {
         // Create Javalin server
         Javalin app = Javalin.create(config -> {
             config.http.defaultContentType = "application/json";
-        }).start(7003); // Different port from IngestServer
+        }).start(PORT);
 
         // Add CORS support
         app.before(ctx -> {

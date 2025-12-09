@@ -5,6 +5,7 @@ import com.mongodb.client.*;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
+import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -17,20 +18,23 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class IndexingAPI {
+public class IndexAPI {
 
     // ---------- configuration / state ----------
     private static final Gson gson = new Gson();
 
     private static final Path CONTROL_DIR = Paths.get("control");
     private static final Path INDEXED_FILE = CONTROL_DIR.resolve("indexed_books.txt");
-    private static final int PORT = 7004;
 
     private static MongoCollection<Document> booksCollection;
     private static MongoDatabase indexDb;
     private static LocalDateTime lastUpdate = null;
 
     public static void main(String[] args) {
+
+        Dotenv dotenv = Dotenv.load();
+        int PORT = Integer.parseInt(dotenv.get("INDEX_PORT"));
+
         try {
             MongoDatabase[] dbs = RepositoryConnection.connectToDB();
 
@@ -49,10 +53,10 @@ public class IndexingAPI {
                 .start(PORT);
 
         // endpoints
-        app.get("/status", IndexingAPI::status);
-        app.post("/index/update/{book_id}", IndexingAPI::indexSingle);
-        app.post("/index/all", IndexingAPI::indexAll);
-        app.get("/index/status", IndexingAPI::indexStatus);
+        app.get("/status", IndexAPI::status);
+        app.post("/index/update/{book_id}", IndexAPI::indexSingle);
+        app.post("/index/all", IndexAPI::indexAll);
+        app.get("/index/status", IndexAPI::indexStatus);
 
         System.out.println("🚀 Index API running on port: " + PORT);
     }

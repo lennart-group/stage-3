@@ -7,6 +7,7 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -22,14 +23,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public class IngestingAPI {
+public class IngestAPI {
 
   private static final Gson gson = new Gson();
   private static MongoDatabase[] databases;
   private static MongoCollection<Document> booksCollection;
-  private static final int PORT = 7000;
 
   public static void main(String[] args) {
+
+      Dotenv dotenv = Dotenv.load();
+      int PORT = Integer.parseInt(dotenv.get("INGEST_PORT"));
 
     try {
       databases = RepositoryConnection.connectToDB();
@@ -53,13 +56,13 @@ public class IngestingAPI {
     });
 
     // POST /ingest/{book_id}
-    app.post("/ingest/{book_id}", IngestingAPI::handleIngestBook);
+    app.post("/ingest/{book_id}", IngestAPI::handleIngestBook);
 
     // GET /ingest/status/{book_id}
-    app.get("/ingest/status/{book_id}", IngestingAPI::handleGetStatus);
+    app.get("/ingest/status/{book_id}", IngestAPI::handleGetStatus);
 
     // GET /ingest/list
-    app.get("/ingest/list", IngestingAPI::handleListBooks);
+    app.get("/ingest/list", IngestAPI::handleListBooks);
   }
 
   public static void handleIngestBook(Context ctx) {
