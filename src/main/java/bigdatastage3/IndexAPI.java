@@ -28,7 +28,8 @@ public class IndexAPI {
 
     private static MongoCollection<Document> booksCollection;
     private static MongoDatabase indexDb;
-    private static LocalDateTime lastUpdate = null;
+    static LocalDateTime lastUpdate = null;   // exposed for IndexingWorker
+    private static MessageBroker broker;
 
     public static void main(String[] args) {
 
@@ -43,8 +44,16 @@ public class IndexAPI {
             booksCollection = dbs[0].getCollection("books");
             indexDb = dbs[1];
             System.out.println("✅ IndexApi DB initialized");
+
+            // Initialize message broker and start asynchronous worker.
+            broker = new MessageBroker();
+            IndexingWorker worker = new IndexingWorker(broker, booksCollection);
+            broker.subscribe(MessageBroker.QUEUE_DOC_INGESTED, worker);
+            System.out.println("📨 IndexingWorker subscribed to " + MessageBroker.QUEUE_DOC_INGESTED);
+
         } catch (Exception e) {
-            System.err.println("An error occured while connecting to the database" + e.getMessage());
+            System.err.println("An error occured while connecting to the database: " + e.getMessage());
+            e.printStackTrace();
             return;
         }
 
@@ -93,9 +102,14 @@ public class IndexAPI {
                 return;
             }
 
+            // Synchronous indexing triggered by REST call.
             processBook(id, text);
 
-            lastUpdate = LocalDateTime.now();
+            // Emit "document.indexed" event for observers (optional).
+            try {
+                broker.sendDocumentIndexed(id);
+            } catch (Exception ignored) {
+            }
 
             ctx.result(gson.toJson(Map.of(
                     "book_id", id,
@@ -125,15 +139,10 @@ public class IndexAPI {
 
                     String text = d.getString("content");
                     if (text == null) {
-                        ctx.status(404).result(gson.toJson(Map.of(
-                                "error", "Book not found: " + id)));
-                        return;
+                        continue;
                     }
 
                     processBook(id, text);
-
-                    lastUpdate = LocalDateTime.now();
-
                     count++;
                 }
             }
@@ -141,9 +150,7 @@ public class IndexAPI {
             ctx.result(gson.toJson(Map.of(
                     "books_processed", count,
                     "elapsed_time", termsTotal)));
-        } catch (
-
-                Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
             ctx.status(500).result(gson.toJson(Map.of("error", e.getMessage())));
         }
@@ -165,7 +172,11 @@ public class IndexAPI {
 
     // ---------- core indexing ----------
 
-    private static void processBook(int bookId, String text) throws Exception {
+    /**
+     * Tokenizes the text, updates the MongoDB-based inverted index
+     * and writes the book ID to the local "indexed_books.txt" control file.
+     */
+    public static void processBook(int bookId, String text) throws Exception {
         Set<String> terms = tokenize(text);
 
         for (String t : terms) {
@@ -173,6 +184,7 @@ public class IndexAPI {
         }
 
         markIndexed(bookId);
+        lastUpdate = LocalDateTime.now();
         System.out.printf("✅ Indexed book %d (%d unique terms).%n", bookId, terms.size());
     }
 
@@ -235,3 +247,4 @@ public class IndexAPI {
         }
     }
 }
+
