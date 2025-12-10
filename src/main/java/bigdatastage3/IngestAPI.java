@@ -28,23 +28,33 @@ public class IngestAPI {
   private static final Gson gson = new Gson();
   private static MongoDatabase[] databases;
   private static MongoCollection<Document> booksCollection;
+  private static MessageBroker broker;
 
   public static void main(String[] args) {
 
-      Dotenv dotenv = Dotenv.load();
-      int PORT = Integer.parseInt(dotenv.get("INGEST_PORT"));
+    Dotenv dotenv = Dotenv.load();
+    int PORT = Integer.parseInt(dotenv.get("INGEST_PORT"));
 
     try {
       databases = RepositoryConnection.connectToDB();
+      booksCollection = databases[0].getCollection("books");
+
+      // Initialize message broker for emitting "document.ingested" events.
+      broker = new MessageBroker();
+
     } catch (FileNotFoundException e) {
       e.printStackTrace();
+      return;
+    } catch (Exception e) {
+      System.err.println("Error initializing IngestAPI: " + e.getMessage());
+      e.printStackTrace();
+      return;
     }
-    booksCollection = databases[0].getCollection("books");
 
     Javalin app = Javalin.create(config -> {
       config.http.defaultContentType = "application/json";
     }).start(PORT);
-    System.out.println("Running on port:" + PORT);
+    System.out.println("IngestAPI running on port: " + PORT);
 
     // Health check status
     app.get("/status", ctx -> {
@@ -70,17 +80,17 @@ public class IngestAPI {
     int idNum;
     try {
       idNum = Integer.parseInt(bookId);
-      // Buch aus DB holen
     } catch (NumberFormatException e) {
       ctx.status(400).result("Invalid book_id: must be a number");
       return;
     }
+
     try {
-      // Download book from Project Gutenberg
+      // Download book from Project Gutenberg.
       String urlString = "https://www.gutenberg.org/cache/epub/" + bookId + "/pg" + bookId + ".txt";
       String bookContent = downloadBook(urlString);
 
-      // Strip metadata from book
+      // Extract metadata from the book text.
       String title = extractMetadata(bookContent, "Title:");
       String author = extractMetadata(bookContent, "Author:");
       String releaseDate = extractReleaseDate(bookContent);
@@ -93,6 +103,15 @@ public class IngestAPI {
       Document book = buildDbEntry(idNum, contentAndFooter[0], title, author, releaseDate, language,
           contentAndFooter[1]);
       booksCollection.replaceOne(Filters.eq("id", idNum), book, new ReplaceOptions().upsert(true));
+
+      // Emit "document.ingested" event so that the indexing service can react asynchronously.
+      try {
+        broker.sendDocumentIngested(idNum);
+        System.out.println("📨 Sent document.ingested for book " + idNum);
+      } catch (Exception ex) {
+        System.err.println("Failed to send broker event: " + ex.getMessage());
+      }
+
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("book_id", bookId);
       response.put("status", "downloaded");
@@ -114,7 +133,6 @@ public class IngestAPI {
     int idNum;
     try {
       idNum = Integer.parseInt(bookId);
-      // Buch aus DB holen
     } catch (NumberFormatException e) {
       ctx.status(400).result("Invalid book_id: must be a number");
       return;
@@ -138,10 +156,9 @@ public class IngestAPI {
       while (cursor.hasNext()) {
         Document doc = cursor.next();
         idList.add(doc.getInteger("id"));
-
       }
     } catch (Exception e) {
-      // TODO: handle exception
+      // Ignore errors when listing books.
     }
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("count", bookCount);
@@ -177,7 +194,6 @@ public class IngestAPI {
     for (int i = 0; i < lines.length; i++) {
       if (lines[i].startsWith("Release date:")) {
         releaseDate = lines[i].substring("Release date:".length()).trim();
-        // Prüfen, ob nächste Zeile mit "Most recently updated:" beginnt
         if (i + 1 < lines.length && lines[i + 1].trim().startsWith("Most recently updated:")) {
           releaseDate += " | " + lines[i + 1].trim();
         }
@@ -196,7 +212,7 @@ public class IngestAPI {
       String footer = text.substring(end);
       return new String[] { content, footer };
     } else {
-      return null; // fallback
+      return null; // Fallback if markers are missing.
     }
   }
 
@@ -212,3 +228,4 @@ public class IngestAPI {
         .append("footer", footer);
   }
 }
+
