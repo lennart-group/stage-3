@@ -3,6 +3,7 @@ package bigdatastage3;
 import com.google.gson.Gson;
 import io.github.cdimascio.dotenv.Dotenv;
 import jakarta.jms.*;
+import jakarta.jms.ConnectionFactory;
 import org.apache.activemq.ActiveMQConnectionFactory;
 
 import java.io.Closeable;

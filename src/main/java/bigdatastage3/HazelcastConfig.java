@@ -1,38 +1,44 @@
 package bigdatastage3;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.*;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 
-/**
- * Erzeugt und verwaltet die Hazelcast-Instanz für den verteilten In-Memory-Index.
- */
 public class HazelcastConfig {
 
     private static HazelcastInstance INSTANCE;
 
     public static HazelcastInstance getHazelcastInstance() {
         if (INSTANCE == null) {
-            Config config = new Config();
 
-            // Cluster-Name (muss bei allen Knoten gleich sein)
+            Config config = new Config();
             config.setClusterName("search-cluster");
 
-            // Netzwerk-Einstellungen
-            config.getNetworkConfig()
-                    .setPort(5701)
-                    .setPortAutoIncrement(true);
+            // ---------- NETWORK ----------
+            NetworkConfig network = config.getNetworkConfig();
+            network.setPort(5701).setPortAutoIncrement(true);
 
-            // Konfiguration für die Inverted-Index-Map
+            JoinConfig join = network.getJoin();
+            join.getMulticastConfig().setEnabled(false);
+            TcpIpConfig tcpIpConfig = join.getTcpIpConfig();
+            tcpIpConfig.setEnabled(true);
+
+            // 🔹 Docker Multi-Instance Discovery
+            // Docker erzeugt automatisch DNS wie: search-1, search-2, search-3
+            // Für IndexAPI z.B.: index-1, index-2
+            tcpIpConfig.addMember("search")   // generischer Service-Name
+                      .addMember("index");   // Index-Instanzen, falls benötigt
+
+            // ---------- MAP CONFIG ----------
             MapConfig mapCfg = new MapConfig("inverted-index")
-                    .setBackupCount(2)       // synchrone Backups
-                    .setAsyncBackupCount(1); // asynchrones Backup
+                    .setBackupCount(2)
+                    .setAsyncBackupCount(1);
 
             config.addMapConfig(mapCfg);
 
             INSTANCE = Hazelcast.newHazelcastInstance(config);
         }
+
         return INSTANCE;
     }
 

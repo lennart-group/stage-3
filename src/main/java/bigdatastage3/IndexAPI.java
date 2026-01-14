@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jakarta.jms.JMSException;
 
 public class IndexAPI {
 
@@ -31,7 +32,7 @@ public class IndexAPI {
     static LocalDateTime lastUpdate = null;   // exposed for IndexingWorker
     private static MessageBroker broker;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws JMSException {
 
         Dotenv dotenv = Dotenv.load();
         int PORT = Integer.parseInt(dotenv.get("INDEX_PORT"));

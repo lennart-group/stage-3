@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  activemq:
+    image: apache/activemq-classic:5.19.0
+    container_name: activemq
+    ports:
+      - "61616:61616"
+      - "8161:8161"
+    networks:
+      - bigdata
+    restart: always
+
+  ingest:
+    build: ./ingest
+    env_file: .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.IngestAPI
+    networks:
+      - bigdata
+    restart: always
+
+  index:
+    build: ./index
+    env_file: .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.IndexAPI
+    networks:
+      - bigdata
+    restart: always
+
+  search:
+    build: ./search
+    env_file: .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.SearchAPI
+    networks:
+      - bigdata
+    restart: always
+
+  controller:
+    build: ./controller
+    container_name: controller
+    env_file: .env
+    environment:
+      - MAIN_CLASS=bigdatastage3.ControllingUnit
+    networks:
+      - bigdata
+    restart: always
+    ports:
+      - "7000:7000"   # Controller REST-Endpunkte für Nutzer
+
+  nginx:
+    image: nginx:latest
+    container_name: load_balancer
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - search
+    networks:
+      - bigdata
+
+networks:
+  bigdata:
+    driver: bridge
