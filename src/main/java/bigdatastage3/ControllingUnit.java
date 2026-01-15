@@ -38,13 +38,13 @@ public class ControllingUnit {
 
     Javalin app = Javalin.create().start(PORT);
 
-app.before(ctx -> {
-    ctx.header("Access-Control-Allow-Origin", "*");
-    ctx.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    ctx.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-});
+    app.before(ctx -> {
+      ctx.header("Access-Control-Allow-Origin", "*");
+      ctx.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+      ctx.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    });
 
-app.options("/*", ctx -> ctx.status(204));
+    app.options("/*", ctx -> ctx.status(204));
 
     // ---------- endpoints ----------
     app.get("/status", ControllingUnit::status);
@@ -77,9 +77,9 @@ app.options("/*", ctx -> ctx.status(204));
       }
 
       // Download book
-      String ingestResult = callApi(INGEST_API + "/ingest/" + bookId);
+      String ingestResult = callApiWithRetry(INGEST_API + "/ingest/" + bookId, 3, 500);
       // Index book
-      String indexResult = callApi(INDEX_API + "/index/update/" + bookId);
+      String indexResult = callApiWithRetry(INDEX_API + "/index/update/" + bookId, 3, 500);
 
       markProcessed(bookId);
 
@@ -107,8 +107,8 @@ app.options("/*", ctx -> ctx.status(204));
     List<Map<String, Object>> results = new ArrayList<>();
     for (int id : bookIds) {
       try {
-        String ingestResult = callApi(INGEST_API + "/ingest/" + id);
-        String indexResult = callApi(INDEX_API + "/index/update/" + id);
+        String ingestResult = callApiWithRetry(INGEST_API + "/ingest/" + id, 3, 500);
+        String indexResult = callApiWithRetry(INDEX_API + "/index/update/" + id, 3, 500);
         markProcessed(id);
 
         results.add(Map.of(
@@ -161,7 +161,7 @@ app.options("/*", ctx -> ctx.status(204));
       if (year != null)
         url += "&year=" + year;
 
-      String response = callApi(url);
+      String response = callApiWithRetry(url, 3, 500);
       ctx.result(response);
     } catch (Exception e) {
       ctx.status(500).json(Map.of("error", "Search failed: " + e));
@@ -170,10 +170,30 @@ app.options("/*", ctx -> ctx.status(204));
 
   // ---------- helpers ----------
 
-  private static String callApi(String url) throws IOException, InterruptedException {
-    HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
-    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    return response.body();
+  private static String callApiWithRetry(String url, int maxRetries, int delayMillis)
+      throws IOException, InterruptedException {
+    int attempts = 0;
+    while (true) {
+      try {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .GET()
+            .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 200) {
+          return response.body();
+        } else {
+          throw new IOException("Non-200 response: " + response.statusCode());
+        }
+      } catch (Exception e) {
+        attempts++;
+        if (attempts >= maxRetries) {
+          throw e;
+        }
+        System.out.println("Retry " + attempts + " for URL " + url + " after " + delayMillis + "ms");
+        Thread.sleep(delayMillis);
+      }
+    }
   }
 
   private static void ensureControlDir() throws IOException {
