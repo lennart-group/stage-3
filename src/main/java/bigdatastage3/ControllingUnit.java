@@ -1,9 +1,7 @@
 package bigdatastage3;
 
 import com.google.gson.Gson;
-import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
-import io.javalin.plugin.bundled.CorsPlugin;
 import io.javalin.http.Context;
 
 import java.io.*;
@@ -29,34 +27,24 @@ public class ControllingUnit {
 
   public static void main(String[] args) throws IOException {
 
-    Dotenv dotenv = Dotenv.load();
-
-    INGEST_API = dotenv.get("INGEST_API");
-    INDEX_API = dotenv.get("INDEX_API");
-    SEARCH_API = dotenv.get("SEARCH_API");
+    INGEST_API = System.getenv("INGEST_API");
+    INDEX_API = System.getenv("INDEX_API");
+    SEARCH_API = System.getenv("SEARCH_API");
     CONTROL_DIR = Paths.get("control");
+    int PORT = Integer.parseInt(System.getenv("CONTROLLER_PORT"));
     PROCESSED_FILE = CONTROL_DIR.resolve("processed_books.txt");
 
     ensureControlDir();
 
-    int PORT = 7000; // Controller port
-    Javalin app = Javalin.create(config -> {
-      config.registerPlugin(new CorsPlugin(cors -> {
-        cors.addRule(rule -> {
-          rule.anyHost(); // erlaubt alle Origins
-          rule.allowCredentials = false;
-          rule.headersToExpose().add("Content-Type"); // was im Response sichtbar sein soll
-          rule.notifyAll(); // logs bei CORS Requests (optional)
-        });
-      }));
-    }).start(PORT);
+    Javalin app = Javalin.create().start(PORT);
 
-    app.options("/*", ctx -> {
+app.before(ctx -> {
     ctx.header("Access-Control-Allow-Origin", "*");
     ctx.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     ctx.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-    ctx.status(204); // No Content
 });
+
+app.options("/*", ctx -> ctx.status(204));
 
     // ---------- endpoints ----------
     app.get("/status", ControllingUnit::status);
@@ -176,7 +164,7 @@ public class ControllingUnit {
       String response = callApi(url);
       ctx.result(response);
     } catch (Exception e) {
-      ctx.status(500).json(Map.of("error", "Search failed: " + e.getMessage()));
+      ctx.status(500).json(Map.of("error", "Search failed: " + e));
     }
   }
 

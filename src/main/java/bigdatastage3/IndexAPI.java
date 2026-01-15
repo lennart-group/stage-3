@@ -5,7 +5,6 @@ import com.mongodb.client.*;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
-import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -34,8 +33,7 @@ public class IndexAPI {
 
     public static void main(String[] args) throws JMSException {
 
-        Dotenv dotenv = Dotenv.load();
-        int PORT = Integer.parseInt(dotenv.get("INDEX_PORT"));
+        int PORT = Integer.parseInt(System.getenv("INDEX_PORT"));
 
         try {
             MongoDatabase[] dbs = RepositoryConnection.connectToDB();

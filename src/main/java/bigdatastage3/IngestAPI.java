@@ -7,7 +7,6 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
-import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -32,8 +31,7 @@ public class IngestAPI {
 
   public static void main(String[] args) {
 
-    Dotenv dotenv = Dotenv.load();
-    int PORT = Integer.parseInt(dotenv.get("INGEST_PORT"));
+    int PORT = Integer.parseInt(System.getenv("INGEST_PORT"));
 
     try {
       databases = RepositoryConnection.connectToDB();

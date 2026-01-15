@@ -1,7 +1,6 @@
 package bigdatastage3;
 
 import com.google.gson.Gson;
-import io.github.cdimascio.dotenv.Dotenv;
 import jakarta.jms.*;
 import jakarta.jms.ConnectionFactory;
 import org.apache.activemq.ActiveMQConnectionFactory;
@@ -30,9 +29,7 @@ public class MessageBroker implements Closeable {
     private final Session session;
 
     public MessageBroker() throws JMSException {
-        Dotenv dotenv = Dotenv.load();
-        // če v .env ni BROKER_URL, uporabljamo tipično docker ime "activemq"
-        String brokerUrl = dotenv.get("BROKER_URL", "tcp://activemq:61616");
+        String brokerUrl = System.getenv("BROKER_URL");
 
         ConnectionFactory factory = new ActiveMQConnectionFactory(brokerUrl);
         this.connection = factory.createConnection();

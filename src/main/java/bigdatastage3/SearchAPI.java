@@ -3,7 +3,6 @@ package bigdatastage3;
 import com.google.gson.Gson;
 import com.mongodb.client.*;
 import com.mongodb.client.model.Filters;
-import io.github.cdimascio.dotenv.Dotenv;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -23,8 +22,7 @@ public class SearchAPI {
 
     public static void main(String[] args) {
 
-        Dotenv dotenv = Dotenv.load();
-        int PORT = Integer.parseInt(dotenv.get("SEARCH_PORT"));
+        int PORT = Integer.parseInt(System.getenv("SEARCH_PORT"));
 
         // Initialize MongoDB connection
         try {

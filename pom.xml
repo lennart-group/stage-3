@@ -35,16 +35,15 @@
       <version>5.1.0</version> <!-- oder aktuelle Version -->
     </dependency>
     <dependency>
-      <groupId>io.github.cdimascio</groupId>
-      <artifactId>dotenv-java</artifactId>
-      <version>3.0.0</version>
-    </dependency>
-    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>2.0.9</version>
     </dependency>
-
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.16.1</version>
+    </dependency>
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
       <artifactId>jmh-core</artifactId>
@@ -164,6 +163,100 @@
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-resources-plugin</artifactId>
+  <version>3.3.1</version>
+  <executions>
+
+    <!-- Ingest -->
+    <execution>
+      <id>copy-ingest-jar</id>
+      <phase>package</phase>
+      <goals>
+        <goal>copy-resources</goal>
+      </goals>
+      <configuration>
+        <resources>
+          <resource>
+            <directory>${project.build.directory}</directory>
+            <includes>
+              <include>IngestingAPI.jar</include>
+            </includes>
+          </resource>
+        </resources>
+        <outputDirectory>${project.basedir}/docker/ingest</outputDirectory>
+        <overwrite>true</overwrite>
+      </configuration>
+    </execution>
+
+    <!-- Index -->
+    <execution>
+      <id>copy-index-jar</id>
+      <phase>package</phase>
+      <goals>
+        <goal>copy-resources</goal>
+      </goals>
+      <configuration>
+        <resources>
+          <resource>
+            <directory>${project.build.directory}</directory>
+            <includes>
+              <include>IndexingAPI.jar</include>
+            </includes>
+          </resource>
+        </resources>
+        <outputDirectory>${project.basedir}/docker/index</outputDirectory>
+        <overwrite>true</overwrite>
+      </configuration>
+    </execution>
+
+    <!-- Search -->
+    <execution>
+      <id>copy-search-jar</id>
+      <phase>package</phase>
+      <goals>
+        <goal>copy-resources</goal>
+      </goals>
+      <configuration>
+        <resources>
+          <resource>
+            <directory>${project.build.directory}</directory>
+            <includes>
+              <include>SearchAPI.jar</include>
+            </includes>
+          </resource>
+        </resources>
+        <outputDirectory>${project.basedir}/docker/search</outputDirectory>
+        <overwrite>true</overwrite>
+      </configuration>
+    </execution>
+
+    <!-- Controller -->
+    <execution>
+      <id>copy-controller-jar</id>
+      <phase>package</phase>
+      <goals>
+        <goal>copy-resources</goal>
+      </goals>
+      <configuration>
+        <resources>
+          <resource>
+            <directory>${project.build.directory}</directory>
+            <includes>
+              <include>ControllingUnit.jar</include>
+            </includes>
+          </resource>
+        </resources>
+        <outputDirectory>${project.basedir}/docker/controller</outputDirectory>
+        <overwrite>true</overwrite>
+      </configuration>
+    </execution>
+
+  </executions>
+</plugin>
+
     </plugins>
 
   </build>

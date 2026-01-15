@@ -3,7 +3,6 @@ package bigdatastage3;
 import com.mongodb.*;
 import com.mongodb.client.*;
 import com.mongodb.client.result.InsertManyResult;
-import io.github.cdimascio.dotenv.Dotenv;
 import org.bson.Document;
 
 import java.io.FileNotFoundException;
@@ -16,10 +15,8 @@ public class RepositoryConnection {
 
   public static MongoDatabase[] connectToDB() throws FileNotFoundException {
 
-    Dotenv dotenv = Dotenv.load();
-
-    String user = dotenv.get("SERVICES_USER");
-    String password = dotenv.get("SERVICES_PASSWORD");
+    String user = System.getenv("SERVICES_USER");
+    String password = System.getenv("SERVICES_PASSWORD");
 
     String enc_user = "";
     try {
@@ -64,22 +61,8 @@ public class RepositoryConnection {
     return null;
   }
 
-  private static MongoClient client;
   private static MongoDatabase db;
   private static MongoCollection<Document> collection;
-
-  // ---------------------------
-  // STATIC INITIALIZATION
-  // ---------------------------
-  static {
-    try {
-      client = MongoClients.create("mongodb://localhost:27017/");
-      db = client.getDatabase("BigData");
-      collection = db.getCollection("books");
-    } catch (Exception e) {
-      System.err.println("❌ Failed to initialize MongoDB client: " + e.getMessage());
-    }
-  }
 
   // ---------------------------
   // CONNECT TO DB (Ping)
