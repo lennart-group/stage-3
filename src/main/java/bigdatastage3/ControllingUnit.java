@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
+import jakarta.jms.JMSException;
 
 public class ControllingUnit {
 
@@ -20,7 +21,6 @@ public class ControllingUnit {
   private static Path PROCESSED_FILE;
 
   private static String INGEST_API;
-  private static String INDEX_API;
   private static String SEARCH_API;
 
   private static final HttpClient httpClient = HttpClient.newHttpClient();
@@ -28,7 +28,6 @@ public class ControllingUnit {
   public static void main(String[] args) throws IOException {
 
     INGEST_API = System.getenv("INGEST_API");
-    INDEX_API = System.getenv("INDEX_API");
     SEARCH_API = System.getenv("SEARCH_API");
     CONTROL_DIR = Paths.get("control");
     int PORT = Integer.parseInt(System.getenv("CONTROLLER_PORT"));
@@ -43,13 +42,13 @@ public class ControllingUnit {
       ctx.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
       ctx.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
     });
-
     app.options("/*", ctx -> ctx.status(204));
 
     // ---------- endpoints ----------
     app.get("/status", ControllingUnit::status);
     app.post("/control/run/{book_id}", ControllingUnit::processBook);
     app.post("/control/run-batch", ControllingUnit::processBooksBatch);
+    app.post("/control/reindex", ControllingUnit::reindexAll);
     app.get("/control/processed", ControllingUnit::processedBooks);
     app.get("/search", ControllingUnit::searchBooks);
 
@@ -65,8 +64,13 @@ public class ControllingUnit {
     ctx.result(gson.toJson(status));
   }
 
+  /**
+   * Start ingestion for a single book.
+   * Indexing happens automatically via JMS.
+   */
   private static void processBook(Context ctx) {
     String idStr = ctx.pathParam("book_id");
+    System.out.printf("Received request to index book: %s%n", idStr);
     try {
       int bookId = Integer.parseInt(idStr);
       if (alreadyProcessed(bookId)) {
@@ -76,17 +80,15 @@ public class ControllingUnit {
         return;
       }
 
-      // Download book
+      // Trigger ingest
       String ingestResult = callApiWithRetry(INGEST_API + "/ingest/" + bookId, 3, 500);
-      // Index book
-      String indexResult = callApiWithRetry(INDEX_API + "/index/update/" + bookId, 3, 500);
 
       markProcessed(bookId);
+      System.out.println("Book " + bookId + " ingested successfully.");
 
       ctx.result(gson.toJson(Map.of(
           "book_id", bookId,
           "ingest", ingestResult,
-          "index", indexResult,
           "status", "success")));
 
     } catch (NumberFormatException e) {
@@ -96,6 +98,9 @@ public class ControllingUnit {
     }
   }
 
+  /**
+   * Start ingestion for a batch of books.
+   */
   private static void processBooksBatch(Context ctx) {
     Map<String, Object> body = ctx.bodyAsClass(Map.class);
     List<Integer> bookIds = ((List<?>) body.getOrDefault("book_ids", List.of()))
@@ -108,15 +113,11 @@ public class ControllingUnit {
     for (int id : bookIds) {
       try {
         String ingestResult = callApiWithRetry(INGEST_API + "/ingest/" + id, 3, 500);
-        String indexResult = callApiWithRetry(INDEX_API + "/index/update/" + id, 3, 500);
         markProcessed(id);
-
         results.add(Map.of(
             "book_id", id,
             "ingest", ingestResult,
-            "index", indexResult,
             "status", "success"));
-
       } catch (Exception e) {
         results.add(Map.of(
             "book_id", id,
@@ -126,6 +127,18 @@ public class ControllingUnit {
     }
 
     ctx.json(results);
+  }
+
+  /**
+   * Send a reindex.request event to the broker.
+   */
+  private static void reindexAll(Context ctx) {
+    try (MessageBroker broker = new MessageBroker()) {
+      broker.sendReindexRequest();
+      ctx.result(gson.toJson(Map.of("status", "reindex request sent")));
+    } catch (JMSException | IOException e) {
+      ctx.status(500).result(gson.toJson(Map.of("error", e.getMessage())));
+    }
   }
 
   private static void processedBooks(Context ctx) {
@@ -172,6 +185,7 @@ public class ControllingUnit {
 
   private static String callApiWithRetry(String url, int maxRetries, int delayMillis)
       throws IOException, InterruptedException {
+    System.out.println("Calling API: " + url);
     int attempts = 0;
     while (true) {
       try {
@@ -180,17 +194,14 @@ public class ControllingUnit {
             .GET()
             .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() == 200) {
+        if (response.statusCode() == 200)
           return response.body();
-        } else {
-          throw new IOException("Non-200 response: " + response.statusCode());
-        }
+        else
+          throw new IOException("Non-200 response: " + response);
       } catch (Exception e) {
         attempts++;
-        if (attempts >= maxRetries) {
+        if (attempts >= maxRetries)
           throw e;
-        }
-        System.out.println("Retry " + attempts + " for URL " + url + " after " + delayMillis + "ms");
         Thread.sleep(delayMillis);
       }
     }
@@ -206,7 +217,7 @@ public class ControllingUnit {
   private static void markProcessed(int bookId) throws IOException {
     try (BufferedWriter bw = Files.newBufferedWriter(
         PROCESSED_FILE, StandardCharsets.UTF_8,
-        StandardOpenOption.APPEND)) {
+        StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
       bw.write(String.valueOf(bookId));
       bw.newLine();
     }

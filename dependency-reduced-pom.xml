@@ -13,7 +13,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <mainClass>bigdatastage2.IndexApi</mainClass>
+          <mainClass>bigdatastage3.IndexingServiceApp</mainClass>
         </configuration>
       </plugin>
       <plugin>
@@ -21,7 +21,7 @@
         <version>3.6.0</version>
         <executions>
           <execution>
-            <id>shade-ingesting</id>
+            <id>shade-ingest</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -29,11 +29,10 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>bigdatastage2.IngestingAPI</mainClass>
+                  <mainClass>bigdatastage3.IngestAPI</mainClass>
                 </transformer>
               </transformers>
-              <finalName>IngestingAPI</finalName>
-              <outputFile>${project.build.directory}/IngestingAPI.jar</outputFile>
+              <finalName>IngestAPI</finalName>
             </configuration>
           </execution>
           <execution>
@@ -45,15 +44,14 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>bigdatastage2.IndexingAPI</mainClass>
+                  <mainClass>bigdatastage3.IndexingServiceApp</mainClass>
                 </transformer>
               </transformers>
-              <finalName>IndexingAPI</finalName>
-              <outputFile>${project.build.directory}/IndexingAPI.jar</outputFile>
+              <finalName>IndexingService</finalName>
             </configuration>
           </execution>
           <execution>
-            <id>shade-searching</id>
+            <id>shade-search</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -61,15 +59,14 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>bigdatastage2.SearchAPI</mainClass>
+                  <mainClass>bigdatastage3.SearchAPI</mainClass>
                 </transformer>
               </transformers>
               <finalName>SearchAPI</finalName>
-              <outputFile>${project.build.directory}/SearchAPI.jar</outputFile>
             </configuration>
           </execution>
           <execution>
-            <id>shade-controlling</id>
+            <id>shade-controller</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -81,7 +78,6 @@
                 </transformer>
               </transformers>
               <finalName>ControllingUnit</finalName>
-              <outputFile>${project.build.directory}/ControllingUnit.jar</outputFile>
             </configuration>
           </execution>
         </executions>
@@ -101,7 +97,7 @@
                 <resource>
                   <directory>${project.build.directory}</directory>
                   <includes>
-                    <include>IngestingAPI.jar</include>
+                    <include>IngestAPI.jar</include>
                   </includes>
                 </resource>
               </resources>
@@ -120,7 +116,7 @@
                 <resource>
                   <directory>${project.build.directory}</directory>
                   <includes>
-                    <include>IndexingAPI.jar</include>
+                    <include>IndexingService.jar</include>
                   </includes>
                 </resource>
               </resources>

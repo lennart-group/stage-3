@@ -16,6 +16,7 @@ services:
     env_file: .env
     environment:
       - MAIN_CLASS=bigdatastage3.IngestAPI
+      - BROKER_URL=tcp://activemq:61616
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7001/status"]
       interval: 10s
@@ -24,21 +25,21 @@ services:
       timeout: 5s
     networks:
       - bigdata
+    depends_on:
+      - activemq
     restart: always
 
-  index:
+  index-worker:
     build: ./index
     env_file: .env
     environment:
-      - MAIN_CLASS=bigdatastage3.IndexAPI
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7002/status"]
-      interval: 10s
-      retries: 5
-      start_period: 5s
-      timeout: 5s
+      - MAIN_CLASS=bigdatastage3.IndexingServiceApp
+      - BROKER_URL=tcp://activemq:61616
+      - MONGO_URI=${MONGO_URI}
     networks:
       - bigdata
+    depends_on:
+      - activemq
     restart: always
 
   search:
@@ -64,7 +65,6 @@ services:
       - MAIN_CLASS=bigdatastage3.ControllingUnit
       - SEARCH_API=http://nginx:80
       - INGEST_API=http://ingest:7001
-      - INDEX_API=http://index:7002
     networks:
       - bigdata
     restart: always
@@ -72,8 +72,6 @@ services:
       - "7000:7000"   # Controller REST-Endpunkte für Nutzer
     depends_on:
       - ingest
-      - index
-      - search
       - activemq
 
   nginx:

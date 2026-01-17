@@ -63,8 +63,8 @@ public class IngestAPI {
       ctx.result(gson.toJson(status));
     });
 
-    // POST /ingest/{book_id}
-    app.post("/ingest/{book_id}", IngestAPI::handleIngestBook);
+    // GET /ingest/{book_id}
+    app.get("/ingest/{book_id}", IngestAPI::handleIngestBook);
 
     // GET /ingest/status/{book_id}
     app.get("/ingest/status/{book_id}", IngestAPI::handleGetStatus);
@@ -84,6 +84,8 @@ public class IngestAPI {
     }
 
     try {
+      System.out.println("Received request to ingest book: "+ bookId);
+      System.out.flush();
       // Download book from Project Gutenberg.
       String urlString = "https://www.gutenberg.org/cache/epub/" + bookId + "/pg" + bookId + ".txt";
       String bookContent = downloadBook(urlString);
