@@ -1,0 +1,11 @@
+"Benchmark","Mode","Threads","Samples","Score","Score Error (99,9%)","Unit","Param: concurrency","Param: nodes","Param: numQueries","Param: totalDocs","Param: totalTokens"
+"bigdatastage3.BenchmarkRunner.benchmarkIndexing","thrpt",1,5,"0,991017","0,005493","ops/s",10,1,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIndexing","thrpt",1,5,"0,990343","0,002668","ops/s",10,2,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIngestion","thrpt",1,5,"0,990367","0,004159","ops/s",10,1,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIngestion","thrpt",1,5,"0,990518","0,006710","ops/s",10,2,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIndexing","avgt",1,5,"1,009520","0,008619","s/op",10,1,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIndexing","avgt",1,5,"1,008533","0,003442","s/op",10,2,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIngestion","avgt",1,5,"1,008957","0,004069","s/op",10,1,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkIngestion","avgt",1,5,"1,009098","0,003272","s/op",10,2,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkQuery","avgt",1,5,"0,213900","0,006765","ms/op",10,1,1000,100,10000
+"bigdatastage3.BenchmarkRunner.benchmarkQuery","avgt",1,5,"0,209268","0,003289","ms/op",10,2,1000,100,10000

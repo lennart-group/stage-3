@@ -80,6 +80,21 @@
               <finalName>ControllingUnit</finalName>
             </configuration>
           </execution>
+          <execution>
+            <id>shade-benchmark</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer>
+                  <mainClass>org.openjdk.jmh.Main</mainClass>
+                </transformer>
+              </transformers>
+              <finalName>Benchmarking</finalName>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>

@@ -75,7 +75,7 @@ services:
       - activemq
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.29.4
     container_name: load_balancer
     restart: always
     ports:

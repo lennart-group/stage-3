@@ -31,6 +31,7 @@ public class IngestAPI {
   private static MongoDatabase[] databases;
   private static MongoCollection<Document> booksCollection;
   private static MessageBroker broker;
+  private static final HttpClient httpClient = HttpClient.newHttpClient();
 
   public static void main(String[] args) {
 
@@ -76,7 +77,7 @@ public class IngestAPI {
     app.get("/ingest/list", IngestAPI::handleListBooks);
   }
 
-  public static void handleIngestBook(Context ctx) {
+  public static void handleIngestBook(Context ctx) throws IOException, InterruptedException {
     String bookId = ctx.pathParam("book_id");
     int idNum;
     try {
@@ -91,7 +92,7 @@ public class IngestAPI {
             Filters.eq("id", idNum),
             Filters.or(
                 Filters.exists("ingestStatus", false),
-                Filters.eq("ingestStatus", "NEW"))),
+                Filters.eq("ingestStatus", "FAILED"))),
         new Document()
             .append("$set", new Document("ingestStatus", "INGESTING"))
             .append("$setOnInsert", new Document("id", idNum)),
@@ -145,15 +146,23 @@ public class IngestAPI {
     } catch (Exception e) {
       System.err.println(e.getMessage());
       booksCollection.updateOne(
-        Filters.eq("id", idNum),
-        new Document("$set", new Document("ingestStatus", "NEW"))
-    );
+          Filters.eq("id", idNum),
+          new Document("$set", new Document("ingestStatus", "FAILED")));
+      HttpRequest request = HttpRequest.newBuilder()
+          .uri(URI.create(System.getenv("CONTROLLER_API") + "/control/run/" + bookId))
+          .POST(HttpRequest.BodyPublishers.noBody())
+          .build();
+      try {
+        httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+      } catch (Exception ex) {
+        System.err.println("Controller callback failed: " + ex.getMessage());
+      }
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("book_id", bookId);
-      response.put("status", "downloaded");
+      response.put("status", "failed");
       response.put("path", "BigData.books");
       response.put("error", e.getMessage());
-      ctx.result(gson.toJson(response));
+      ctx.status(500).result(gson.toJson(response));
     }
   }
 
@@ -187,8 +196,11 @@ public class IngestAPI {
         idList.add(doc.getInteger("id"));
       }
     } catch (Exception e) {
-      // Ignore errors when listing books.
+      System.err.println("Failed to list books: " + e.getMessage());
+      ctx.status(500);
+      return;
     }
+
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("count", bookCount);
     response.put("books", idList);
