@@ -1,249 +1,155 @@
 package bigdatastage3;
 
-import com.google.gson.Gson;
-import com.mongodb.client.*;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
-import io.javalin.Javalin;
-import io.javalin.http.Context;
+import com.mongodb.client.model.WriteModel;
+
+import jakarta.jms.JMSException;
+
 import org.bson.Document;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import jakarta.jms.JMSException;
 
 public class IndexAPI {
 
-    // ---------- configuration / state ----------
-    private static final Gson gson = new Gson();
-
-    private static final Path CONTROL_DIR = Paths.get("control");
-    private static final Path INDEXED_FILE = CONTROL_DIR.resolve("indexed_books.txt");
-
-    private static MongoCollection<Document> booksCollection;
     private static MongoDatabase indexDb;
-    static LocalDateTime lastUpdate = null;   // exposed for IndexingWorker
+    private static MongoCollection<Document> booksCollection;
+
     private static MessageBroker broker;
+    public static LocalDateTime lastUpdate = LocalDateTime.now();
 
-    public static void main(String[] args) throws JMSException {
-
-        int PORT = Integer.parseInt(System.getenv("INDEX_PORT"));
-
+    /** Must be called once during service startup */
+    public static void init(MongoDatabase indexDatabase, MongoCollection<Document> booksCol) throws IOException {
+        indexDb = indexDatabase;
+        booksCollection = booksCol;
         try {
-            MongoDatabase[] dbs = RepositoryConnection.connectToDB();
+          broker = new MessageBroker();
+        } catch (JMSException e) {
+          System.err.println("❌ Failed to initialize MessageBroker in IndexAPI");
+          e.printStackTrace();
+        }
+        System.out.println("✅ IndexAPI initialized");
+    }
 
-            ensureControlDir();
-
-            booksCollection = dbs[0].getCollection("books");
-            indexDb = dbs[1];
-            System.out.println("✅ IndexApi DB initialized");
-
-            // Initialize message broker and start asynchronous worker.
-            broker = new MessageBroker();
-            IndexingWorker worker = new IndexingWorker(broker, booksCollection);
-            broker.subscribe(MessageBroker.QUEUE_DOC_INGESTED, worker);
-            System.out.println("📨 IndexingWorker subscribed to " + MessageBroker.QUEUE_DOC_INGESTED);
-
-        } catch (Exception e) {
-            System.err.println("An error occured while connecting to the database: " + e.getMessage());
-            e.printStackTrace();
+    /**
+     * Tokenizes the document text and updates the distributed inverted index.
+     */
+    public static void processBook(int bookId, String text) {
+        if (alreadyIndexed(bookId)) {
+            System.out.printf("ℹ Book %d already indexed, skipping%n", bookId);
             return;
         }
 
-        // Javalin app setup
-        Javalin app = Javalin.create(cfg -> cfg.http.defaultContentType = "application/json")
-                .start(PORT);
-
-        // endpoints
-        app.get("/status", IndexAPI::status);
-        app.post("/index/update/{book_id}", IndexAPI::indexSingle);
-        app.post("/index/all", IndexAPI::indexAll);
-        app.get("/index/status", IndexAPI::indexStatus);
-
-        System.out.println("🚀 Index API running on port: " + PORT);
-    }
-
-    // ---------- handlers ----------
-
-    private static void status(Context ctx) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("service", "index-service");
-        m.put("control_file", INDEXED_FILE.toString());
-        m.put("database", "connected");
-        ctx.result(gson.toJson(m));
-    }
-
-    private static void indexSingle(Context ctx) {
-        String idStr = ctx.pathParam("book_id");
         try {
-            int id = Integer.parseInt(idStr);
-            if (alreadyIndexed(id)) {
-                System.out.printf("Book %d already indexed, returning.\n", id);
-                ctx.result(gson.toJson(Map.of(
-                        "book_id", id,
-                        "index", "already up to date")));
-                return;
+            System.out.println("🔍 Indexing book " + bookId);
+
+            Set<String> terms = tokenize(text);
+
+            // Bulk update MongoDB inverted index with retry
+            boolean success = retryBulkUpdate(terms, bookId, 3);
+
+            if (!success) {
+                throw new RuntimeException("Failed to update MongoDB after retries");
             }
 
-            String text = booksCollection.find(Filters.eq("id", id))
-                    .first()
-                    .getString("content");
+            markIndexed(bookId);
+            lastUpdate = LocalDateTime.now();
 
-            if (text == null) {
-                ctx.status(404).result(gson.toJson(Map.of(
-                        "error", "Book not found: " + id)));
-                return;
-            }
+            System.out.printf("✅ Indexed book %d (%d unique terms)%n", bookId, terms.size());
 
-            // Synchronous indexing triggered by REST call.
-            processBook(id, text);
+        } catch (Exception e) {
+            System.err.printf("❌ Indexing book %d failed: %s%n", bookId, e.getMessage());
 
-            // Emit "document.indexed" event for observers (optional).
+            // Set FAILED status
+            booksCollection.updateOne(
+                Filters.eq("id", bookId),
+                Updates.set("indexStatus", "FAILED")
+            );
+
+            // Notify broker for retry
             try {
-                broker.sendDocumentIndexed(id);
-            } catch (Exception ignored) {
+                broker.sendDocumentIngested(bookId);
+            } catch (Exception ex) {
+                System.err.printf("❌ Broker callback failed for book %d: %s%n", bookId, ex.getMessage());
             }
-
-            ctx.result(gson.toJson(Map.of(
-                    "book_id", id,
-                    "index", "updated")));
-        } catch (NumberFormatException nfe) {
-            ctx.status(400).result("Invalid book_id: must be a number");
-        } catch (Exception e) {
-            e.printStackTrace();
-            ctx.status(500).result(gson.toJson(Map.of("error", e.getMessage())));
         }
     }
 
-    private static void indexAll(Context ctx) {
-        int count = 0;
-        int termsTotal = 0;
-        try {
-            try (MongoCursor<Document> cursor = booksCollection.find().iterator()) {
-                while (cursor.hasNext()) {
-                    Document d = cursor.next();
-                    Integer id = d.getInteger("id");
-                    if (id == null)
-                        continue;
-                    if (alreadyIndexed(id)) {
-                        System.out.printf("Book %d already indexed, skipping.\n", id);
-                        continue;
-                    }
-
-                    String text = d.getString("content");
-                    if (text == null) {
-                        continue;
-                    }
-
-                    processBook(id, text);
-                    count++;
-                }
-            }
-
-            ctx.result(gson.toJson(Map.of(
-                    "books_processed", count,
-                    "elapsed_time", termsTotal)));
-        } catch (Exception e) {
-            e.printStackTrace();
-            ctx.status(500).result(gson.toJson(Map.of("error", e.getMessage())));
-        }
-    }
-
-    private static void indexStatus(Context ctx) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        try {
-            m.put("books_indexed", countIndexedFromFile());
-            m.put("last_update", lastUpdate != null ? lastUpdate.toString() : "unknown");
-            Document stats = indexDb.runCommand(new Document("dbStats", 1));
-            double sizeInMB = stats.getLong("dataSize") / (1024 * 1024);
-            m.put("index_size_MB", sizeInMB);
-            ctx.result(gson.toJson(m));
-        } catch (Exception e) {
-            ctx.status(500).result(gson.toJson(Map.of("error", e.getMessage())));
-        }
-    }
-
-    // ---------- core indexing ----------
-
-    /**
-     * Tokenizes the text, updates the MongoDB-based inverted index
-     * and writes the book ID to the local "indexed_books.txt" control file.
-     */
-    public static void processBook(int bookId, String text) throws Exception {
-        Set<String> terms = tokenize(text);
-
-        for (String t : terms) {
-            updateMongoInvertedIndex(t, bookId);
-        }
-
-        markIndexed(bookId);
-        lastUpdate = LocalDateTime.now();
-        System.out.printf("✅ Indexed book %d (%d unique terms).%n", bookId, terms.size());
-    }
+    // ---------------------- Internal Helpers ----------------------
 
     private static Set<String> tokenize(String text) {
         Set<String> tokens = new HashSet<>();
-        if (text == null)
-            return tokens;
+        if (text == null) return tokens;
+
         Matcher m = Pattern.compile("\\b[a-z]{2,}\\b").matcher(text.toLowerCase());
-        while (m.find())
-            tokens.add(m.group());
+        while (m.find()) tokens.add(m.group());
         return tokens;
     }
 
-    private static void updateMongoInvertedIndex(String term, int bookId) {
-        String bucket = term.substring(0, 1);
-        MongoCollection<Document> col = indexDb.getCollection(bucket);
-        col.updateOne(
-                Filters.eq("term", term),
-                Updates.addToSet("postings", bookId),
-                new UpdateOptions().upsert(true));
-    }
-
-    // ---------- IO helpers ----------
-
-    private static void ensureControlDir() throws IOException {
-        if (!Files.exists(CONTROL_DIR))
-            Files.createDirectories(CONTROL_DIR);
-    }
-
-    private static void markIndexed(int bookId) throws IOException {
-        ensureControlDir();
-        try (BufferedWriter bw = Files.newBufferedWriter(
-                INDEXED_FILE, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            bw.write(String.valueOf(bookId));
-            bw.newLine();
-        }
-    }
-
-    private static boolean alreadyIndexed(int bookId) {
-        if (!Files.exists(INDEXED_FILE))
-            return false;
-        try {
-            for (String line : Files.readAllLines(INDEXED_FILE, StandardCharsets.UTF_8)) {
-                if (line.trim().equals(String.valueOf(bookId)))
-                    return true;
+    private static boolean retryBulkUpdate(Set<String> terms, int bookId, int maxRetries) {
+        int attempt = 0;
+        while (attempt < maxRetries) {
+            try {
+                updateMongoInvertedIndexBulk(terms, bookId);
+                return true;
+            } catch (Exception e) {
+                attempt++;
+                System.err.printf("⚠ Attempt %d failed for book %d: %s%n", attempt, bookId, e.getMessage());
+                try { Thread.sleep(1000L * attempt); } catch (InterruptedException ignored) {}
             }
-        } catch (IOException ignore) {
         }
         return false;
     }
 
-    private static int countIndexedFromFile() {
-        if (!Files.exists(INDEXED_FILE))
-            return 0;
-        try {
-            return (int) Files.lines(INDEXED_FILE, StandardCharsets.UTF_8).filter(s -> !s.isBlank()).count();
-        } catch (IOException e) {
-            return 0;
+    private static void updateMongoInvertedIndexBulk(Set<String> terms, int bookId) {
+        Map<String, List<WriteModel<Document>>> bucketWrites = new HashMap<>();
+
+        for (String term : terms) {
+            String bucket = term.substring(0, 1);
+            bucketWrites.computeIfAbsent(bucket, k -> new ArrayList<>())
+                .add(new UpdateOneModel<>(
+                    Filters.eq("term", term),
+                    Updates.addToSet("postings", bookId),
+                    new UpdateOptions().upsert(true)
+                ));
+        }
+
+        for (Map.Entry<String, List<WriteModel<Document>>> entry : bucketWrites.entrySet()) {
+            String bucket = entry.getKey();
+            List<WriteModel<Document>> writes = entry.getValue();
+            if (!writes.isEmpty()) {
+                MongoCollection<Document> col = indexDb.getCollection(bucket);
+                col.bulkWrite(writes, new BulkWriteOptions().ordered(false));
+            }
         }
     }
-}
 
+    private static void markIndexed(int bookId) {
+        booksCollection.updateOne(
+            Filters.eq("id", bookId),
+            Updates.combine(
+                Updates.set("indexStatus", "DONE"),
+                Updates.set("indexFinishedAt", new Date())
+            )
+        );
+        System.out.println("Marked book " + bookId + " as indexed");
+    }
+
+    private static boolean alreadyIndexed(int bookId) {
+        return booksCollection.find(
+            Filters.and(
+                Filters.eq("id", bookId),
+                Filters.eq("indexStatus", "DONE")
+            )
+        ).first() != null;
+    }
+}

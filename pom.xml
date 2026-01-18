@@ -70,15 +70,15 @@
   <build>
     <plugins>
 
-      <!-- allows running directly with mvn exec:java -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <mainClass>bigdatastage2.IndexApi</mainClass>
+          <mainClass>bigdatastage3.IndexingServiceApp</mainClass>
         </configuration>
       </plugin>
+
 
       <!-- create fat JAR with dependencies -->
       <plugin>
@@ -86,9 +86,10 @@
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.6.0</version>
         <executions>
-          <!-- Ingesting API jar build -->
+
+          <!-- Ingest Service -->
           <execution>
-            <id>shade-ingesting</id>
+            <id>shade-ingest</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -97,15 +98,14 @@
               <transformers>
                 <transformer
                   implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>bigdatastage2.IngestingAPI</mainClass>
+                  <mainClass>bigdatastage3.IngestAPI</mainClass>
                 </transformer>
               </transformers>
-              <finalName>IngestingAPI</finalName>
-              <outputFile>${project.build.directory}/IngestingAPI.jar</outputFile>
+              <finalName>IngestAPI</finalName>
             </configuration>
           </execution>
 
-          <!-- Indexing API jar build -->
+          <!-- Indexing Service (EVENT-DRIVEN) -->
           <execution>
             <id>shade-indexing</id>
             <phase>package</phase>
@@ -116,17 +116,16 @@
               <transformers>
                 <transformer
                   implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>bigdatastage2.IndexingAPI</mainClass>
+                  <mainClass>bigdatastage3.IndexingServiceApp</mainClass>
                 </transformer>
               </transformers>
-              <finalName>IndexingAPI</finalName>
-              <outputFile>${project.build.directory}/IndexingAPI.jar</outputFile>
+              <finalName>IndexingService</finalName>
             </configuration>
           </execution>
 
-          <!-- Search API jar build -->
+          <!-- Search Service -->
           <execution>
-            <id>shade-searching</id>
+            <id>shade-search</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -135,17 +134,16 @@
               <transformers>
                 <transformer
                   implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>bigdatastage2.SearchAPI</mainClass>
+                  <mainClass>bigdatastage3.SearchAPI</mainClass>
                 </transformer>
               </transformers>
               <finalName>SearchAPI</finalName>
-              <outputFile>${project.build.directory}/SearchAPI.jar</outputFile>
             </configuration>
           </execution>
 
-          <!-- ControllingUnit jar build -->
+          <!-- Controller -->
           <execution>
-            <id>shade-controlling</id>
+            <id>shade-controller</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -158,106 +156,123 @@
                 </transformer>
               </transformers>
               <finalName>ControllingUnit</finalName>
-              <outputFile>${project.build.directory}/ControllingUnit.jar</outputFile>
             </configuration>
           </execution>
+
+          <!-- Benchmark Runner -->
+          <execution>
+            <id>shade-benchmark</id>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer
+                  implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.openjdk.jmh.Main</mainClass>
+                </transformer>
+              </transformers>
+              <finalName>Benchmarking</finalName>
+            </configuration>
+          </execution>
+
         </executions>
       </plugin>
 
       <plugin>
-  <groupId>org.apache.maven.plugins</groupId>
-  <artifactId>maven-resources-plugin</artifactId>
-  <version>3.3.1</version>
-  <executions>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
 
-    <!-- Ingest -->
-    <execution>
-      <id>copy-ingest-jar</id>
-      <phase>package</phase>
-      <goals>
-        <goal>copy-resources</goal>
-      </goals>
-      <configuration>
-        <resources>
-          <resource>
-            <directory>${project.build.directory}</directory>
-            <includes>
-              <include>IngestingAPI.jar</include>
-            </includes>
-          </resource>
-        </resources>
-        <outputDirectory>${project.basedir}/docker/ingest</outputDirectory>
-        <overwrite>true</overwrite>
-      </configuration>
-    </execution>
+          <!-- Ingest -->
+          <execution>
+            <id>copy-ingest-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>IngestAPI.jar</include>
+                  </includes>
+                </resource>
+              </resources>
+              <outputDirectory>${project.basedir}/docker/ingest</outputDirectory>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
 
-    <!-- Index -->
-    <execution>
-      <id>copy-index-jar</id>
-      <phase>package</phase>
-      <goals>
-        <goal>copy-resources</goal>
-      </goals>
-      <configuration>
-        <resources>
-          <resource>
-            <directory>${project.build.directory}</directory>
-            <includes>
-              <include>IndexingAPI.jar</include>
-            </includes>
-          </resource>
-        </resources>
-        <outputDirectory>${project.basedir}/docker/index</outputDirectory>
-        <overwrite>true</overwrite>
-      </configuration>
-    </execution>
+          <!-- Index -->
+          <execution>
+            <id>copy-index-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>IndexingService.jar</include>
+                  </includes>
+                </resource>
+              </resources>
+              <outputDirectory>${project.basedir}/docker/index</outputDirectory>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
 
-    <!-- Search -->
-    <execution>
-      <id>copy-search-jar</id>
-      <phase>package</phase>
-      <goals>
-        <goal>copy-resources</goal>
-      </goals>
-      <configuration>
-        <resources>
-          <resource>
-            <directory>${project.build.directory}</directory>
-            <includes>
-              <include>SearchAPI.jar</include>
-            </includes>
-          </resource>
-        </resources>
-        <outputDirectory>${project.basedir}/docker/search</outputDirectory>
-        <overwrite>true</overwrite>
-      </configuration>
-    </execution>
 
-    <!-- Controller -->
-    <execution>
-      <id>copy-controller-jar</id>
-      <phase>package</phase>
-      <goals>
-        <goal>copy-resources</goal>
-      </goals>
-      <configuration>
-        <resources>
-          <resource>
-            <directory>${project.build.directory}</directory>
-            <includes>
-              <include>ControllingUnit.jar</include>
-            </includes>
-          </resource>
-        </resources>
-        <outputDirectory>${project.basedir}/docker/controller</outputDirectory>
-        <overwrite>true</overwrite>
-      </configuration>
-    </execution>
+          <!-- Search -->
+          <execution>
+            <id>copy-search-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>SearchAPI.jar</include>
+                  </includes>
+                </resource>
+              </resources>
+              <outputDirectory>${project.basedir}/docker/search</outputDirectory>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
 
-  </executions>
-</plugin>
+          <!-- Controller -->
+          <execution>
+            <id>copy-controller-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>ControllingUnit.jar</include>
+                  </includes>
+                </resource>
+              </resources>
+              <outputDirectory>${project.basedir}/docker/controller</outputDirectory>
+              <overwrite>true</overwrite>
+            </configuration>
+          </execution>
 
+        </executions>
+      </plugin>
     </plugins>
-
   </build>
 </project>
