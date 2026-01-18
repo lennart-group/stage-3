@@ -70,7 +70,7 @@ public class ControllingUnit {
    */
   private static void processBook(Context ctx) {
     String idStr = ctx.pathParam("book_id");
-    System.out.printf("Received request to index book: %s%n", idStr);
+    System.out.printf("Received request to ingest book: %s%n", idStr);
     try {
       int bookId = Integer.parseInt(idStr);
       if (alreadyProcessed(bookId)) {

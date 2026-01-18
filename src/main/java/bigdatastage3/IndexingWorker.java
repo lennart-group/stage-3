@@ -3,12 +3,17 @@ package bigdatastage3;
 import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
+import com.mongodb.client.model.ReturnDocument;
+import com.mongodb.client.model.Updates;
+import java.util.Date;
+import java.time.LocalDateTime;
+
 import jakarta.jms.Message;
 import jakarta.jms.MessageListener;
 import jakarta.jms.TextMessage;
 import org.bson.Document;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
@@ -28,16 +33,17 @@ public class IndexingWorker implements MessageListener {
   private final MongoCollection<Document> booksCollection;
 
   public IndexingWorker(MessageBroker broker,
-      MongoCollection<Document> booksCollection) {
+                        MongoCollection<Document> booksCollection) {
     this.broker = broker;
     this.booksCollection = booksCollection;
   }
 
   @Override
   public void onMessage(Message message) {
+
+    Integer bookId = null;
+
     try {
-      System.out.println("Received message for indexing");
-      System.out.flush();
       if (!(message instanceof TextMessage)) {
         return;
       }
@@ -50,42 +56,68 @@ public class IndexingWorker implements MessageListener {
         return;
       }
 
-      // Gson parses numbers as Double
-      int bookId = ((Double) payload.get("bookId")).intValue();
+      bookId = ((Double) payload.get("bookId")).intValue();
 
-      // Retrieve document from datalake
-      Document doc = booksCollection
-          .find(Filters.eq("id", bookId))
-          .first();
+      // 🔒 Atomic claim
+      Document claimed = booksCollection.findOneAndUpdate(
+          Filters.and(
+              Filters.eq("id", bookId),
+              Filters.or(
+                  Filters.exists("indexStatus", false),
+                  Filters.eq("indexStatus", "NEW")
+              )
+          ),
+          Updates.combine(
+              Updates.set("indexStatus", "INDEXING"),
+              Updates.set("indexStartedAt", new Date())
+          ),
+          new FindOneAndUpdateOptions()
+              .returnDocument(ReturnDocument.BEFORE)
+      );
 
-      if (doc == null) {
-        System.err.printf(
-            "⚠ Book %d not found in datalake%n", bookId);
+      if (claimed == null) {
+        System.out.printf("⏭ Book %d already indexed or indexing%n", bookId);
         return;
+      }
+
+      Document doc = booksCollection.find(Filters.eq("id", bookId)).first();
+      if (doc == null) {
+        throw new IllegalStateException("Book not found");
       }
 
       String content = doc.getString("content");
       if (content == null || content.isBlank()) {
-        System.err.printf(
-            "⚠ Book %d has no indexable content%n", bookId);
-        return;
+        throw new IllegalStateException("Empty content");
       }
 
-      // Core indexing logic
-      System.out.println("Indexing book: " + bookId + "...");
+      System.out.println("📥 Indexing book " + bookId);
+      // 🔨 Index
       IndexAPI.processBook(bookId, content);
       IndexAPI.lastUpdate = LocalDateTime.now();
 
-      // Notify observers
-      broker.sendDocumentIndexed(bookId);
-      System.out.println("📨 Sent document.indexed for book " + bookId);
+      // ✅ Mark done
+      booksCollection.updateOne(
+          Filters.eq("id", bookId),
+          Updates.set("indexStatus", "DONE")
+      );
 
-      System.out.printf(
-          "✅ Book %d indexed via broker event%n", bookId);
+      broker.sendDocumentIndexed(bookId);
+      System.out.printf("✅ Book %d indexed%n", bookId);
 
     } catch (Exception e) {
-      System.err.println("❌ Error while processing indexing event");
+      System.err.println("❌ Indexing failed for book " + bookId);
       e.printStackTrace();
+
+      if (bookId != -1) {
+        booksCollection.updateOne(
+            Filters.eq("id", bookId),
+            Updates.combine(
+                Updates.set("indexStatus", "ERROR"),
+                Updates.set("indexError", e.getMessage())
+            )
+        );
+      }
     }
   }
 }
+

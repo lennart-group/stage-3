@@ -5,8 +5,11 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.ReturnDocument;
+
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.bson.Document;
@@ -83,8 +86,28 @@ public class IngestAPI {
       return;
     }
 
+    Document claimed = booksCollection.findOneAndUpdate(
+        Filters.and(
+            Filters.eq("id", idNum),
+            Filters.or(
+                Filters.exists("ingestStatus", false),
+                Filters.eq("ingestStatus", "NEW"))),
+        new Document()
+            .append("$set", new Document("ingestStatus", "INGESTING"))
+            .append("$setOnInsert", new Document("id", idNum)),
+        new FindOneAndUpdateOptions()
+            .upsert(true)
+            .returnDocument(ReturnDocument.AFTER));
+
+    if (claimed == null) {
+      ctx.result(gson.toJson(Map.of(
+          "book_id", bookId,
+          "status", "already_ingesting_or_done")));
+      return;
+    }
+
     try {
-      System.out.println("Received request to ingest book: "+ bookId);
+      System.out.println("Received request to ingest book: " + bookId);
       System.out.flush();
       // Download book from Project Gutenberg.
       String urlString = "https://www.gutenberg.org/cache/epub/" + bookId + "/pg" + bookId + ".txt";
@@ -102,9 +125,11 @@ public class IngestAPI {
 
       Document book = buildDbEntry(idNum, contentAndFooter[0], title, author, releaseDate, language,
           contentAndFooter[1]);
+      book.append("ingestStatus", "DONE");
       booksCollection.replaceOne(Filters.eq("id", idNum), book, new ReplaceOptions().upsert(true));
 
-      // Emit "document.ingested" event so that the indexing service can react asynchronously.
+      // Emit "document.ingested" event so that the indexing service can react
+      // asynchronously.
       try {
         broker.sendDocumentIngested(idNum);
         System.out.println("📨 Sent document.ingested for book " + idNum);
@@ -119,6 +144,10 @@ public class IngestAPI {
       ctx.result(gson.toJson(response));
     } catch (Exception e) {
       System.err.println(e.getMessage());
+      booksCollection.updateOne(
+        Filters.eq("id", idNum),
+        new Document("$set", new Document("ingestStatus", "NEW"))
+    );
       Map<String, Object> response = new LinkedHashMap<>();
       response.put("book_id", bookId);
       response.put("status", "downloaded");
@@ -228,4 +257,3 @@ public class IngestAPI {
         .append("footer", footer);
   }
 }
-

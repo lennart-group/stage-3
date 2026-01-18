@@ -22,7 +22,7 @@ public class IndexingServiceApp {
       MongoDatabase indexDb = dbs[1];
 
       // --- Initialize indexing core ---
-      IndexAPI.init(indexDb);
+      IndexAPI.init(indexDb, booksCollection);
 
       // --- Message broker ---
       MessageBroker broker = new MessageBroker();
@@ -37,8 +37,8 @@ public class IndexingServiceApp {
           MessageBroker.QUEUE_DOC_INGESTED,
           worker);
 
-      broker.subscribe(
-          MessageBroker.QUEUE_REINDEX_REQ,
+      broker.subscribeTopic(
+          MessageBroker.TOPIC_REINDEX_REQ,
           reindexWorker);
 
       System.out.println(
